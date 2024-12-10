@@ -1,0 +1,158 @@
+---
+title: "Devereux Slough Nutrient Concentration 2003-2022"
+output: html_notebook
+---
+Agularia data (2003-2011) is available at https://sbclter.msi.ucsb.edu/data/catalog/package/?package=knb-lter-sbc.6. 
+
+Nutrient data for this study was taken at different intervals 1-24 meters from Venoco bridge. 
+
+Cheadle Center data (2017-2022) is available at https://doi.org/10.25349/D9VG9J
+
+Water years are determined based on an October 1st start date. The average rainfall at UCSB is 16.98 inches https://files.countyofsb.org/pwd/hydrology/historic%20data/rainfall/yearly%20graphs/200graph.pdf.
+ 
+
+```{r, echo=FALSE, warning=FALSE}
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(zoo)
+setwd("C:/Users/rickard/Documents/test")
+#Needed Function
+# upload historic rain data for santa barbara
+rain<-read_excel("Data/Rain/200dailys.xls",skip=9)
+colnames(rain)[4]<-"month"
+colnames(rain)[6]<-"Daily_Rain"
+rain$Date<-as.Date(paste0(rain$year,"/",rain$month,"/",rain$day),format="%Y/%m/%d")
+rain<-rain[!is.na(rain$Date),]
+rain$wtr_yr <- getYearQuarter(rain$Date, firstMonth=10)
+rain<-rain[rain$`water year`>2002,]
+rain<-as.data.frame(rain)
+rain_wtryr<-aggregate(Daily_Rain~wtr_yr,rain,FUN=sum)
+
+#Looking at rainfall totals- very different, so going off County webpage instead
+rain_wtryr$rainfall <- ifelse(rain_wtryr$Daily_Rain > 18.39,"Wet","dry")
+ggplot(rain_wtryr)+geom_col(aes(x=wtr_yr,y=Daily_Rain,fill=rainfall))+theme_bw()
+
+#Upload and format old nutrient data from 2004-2011
+old_Dev<-read.csv("Data/Nutrients/sbclter_stream_chemistry_allyears_non_registered_stations_20190628.csv")
+old_Dev<-old_Dev[grepl("^DV", old_Dev$site_code), ]
+old_Dev$Date<-as.Date(old_Dev$timestamp_local,format="%Y-%m-%dT%H:%M:%S")
+old_Dev_m<-old_Dev[,c(3:5,13)]
+colnames(old_Dev_m)<-c("Ammonia.um","Nitrite.Nitrate.um","Phosphate.um","Date")
+old_Dev_m$Environment<-"Golf Course" #naming environment for later merging
+
+#Upload and format new nutrient data from 2017-2022
+new_Dev<-read.csv("Data/nutrients/Nutrients_2018-2022.csv",strip.white = TRUE)
+new_Dev$Sample.Date<-as.Date(new_Dev$Sample.Date,format="%m/%d/%Y")
+new_Dev<-new_Dev[new_Dev$Site=="Venoco"|new_Dev$Site=="Venoco Bridge",]
+new_Dev<-new_Dev[,c(2,4:6)]
+colnames(new_Dev)[1]<-"Date"
+new_Dev$Environment<-"Wetland" #naming environment for later merging
+
+#Merge old and new data together
+Dev_all<-rbind(new_Dev,old_Dev_m)
+Dev_all_rain<-merge(Dev_all,rainfull,by="Date",all.x=TRUE)
+Dev_all_rain<-Dev_all_rain[Dev_all_rain$Phosphate.um>=0&Dev_all_rain$Nitrite.Nitrate.um>=0&Dev_all_rain$Ammonia.um>=0,]
+
+#Plot data
+ggplot(Dev_all_rain)+geom_point(aes(x=twodayrain,y=Ammonia.um, color=Environment))+theme_bw()
+ggplot(Dev_all_rain)+geom_boxplot(aes(x=Environment,y=Nitrite.Nitrate.um))+theme_bw()
+ggplot(Dev_all_rain)+geom_point(aes(x=twodayrain,y=Nitrite.Nitrate.um, color=Environment))+theme_bw()
+ggplot(Dev_all_rain)+geom_boxplot(aes(x=Environment,y=Ammonia.um))+theme_bw()
+ggplot(Dev_all_rain)+geom_boxplot(aes(x=Environment,y=Ammonia.um))+theme_bw()+ylim(0,50)
+ggplot(Dev_all_rain)+geom_point(aes(x=Daily_Rain,y=Phosphate.um, color=Environment))+theme_bw()
+ggplot(Dev_all_rain)+geom_boxplot(aes(x=Environment,y=Phosphate.um))+theme_bw()
+Dev_all_rain
+
+#Summarize data and combine with rain years
+Dev_all_rain$wtr_yr <- getYearQuarter(Dev_all_rain$Date, firstMonth=10)
+Dev_all_rain<-Dev_all_rain[Dev_all_rain$wtr_yr!="WY03",]
+summary<- Dev_all_rain %>% 
+  group_by(wtr_yr) %>% 
+  summarize(
+    avg_P = mean(Phosphate.um),
+    med_P = median(Phosphate.um),
+    max_P = max(Phosphate.um),
+    avg_N = mean(Nitrite.Nitrate.um),
+    med_N = median(Nitrite.Nitrate.um),
+    max_N = max(Nitrite.Nitrate.um),
+    avg_A = mean(Ammonia.um),
+    med_A = median(Ammonia.um),
+    max_A = max(Ammonia.um)
+  )
+waterstats<-merge(summary,rain_wtryr,by="wtr_yr")
+plot(summary$max_A~summary$wtr_yr)
+plot(summary$max_N~summary$wtr_yr)
+plot(summary$max_P~summary$wtr_yr)
+Dev_all_rain_mg<-Dev_all_rain
+Dev_all_rain_mg$P_mg<-(Dev_all_rain_mg$Phosphate.um*30.97)/1000
+Dev_all_rain_mg$N_mg<-(Dev_all_rain_mg$Nitrite.Nitrate.um*14.0067)/1000
+Dev_all_rain_mg$A_mg<-(Dev_all_rain_mg$Ammonia.um*14.0067)/1000
+
+summary2<- Dev_all_rain_mg %>% 
+  group_by(Environment) %>% 
+  summarize(
+    avg_P = mean(P_mg),
+    med_P = median(P_mg),
+    max_P = max(P_mg),
+    avg_N = mean(N_mg),
+    med_N = median(N_mg),
+    max_N = max(N_mg),
+    avg_A = mean(A_mg),
+    med_A = median(A_mg),
+    max_A = max(A_mg)
+  )
+summary2<-as.data.frame(summary2)
+#possibly will want to get daily averages.
+Dev_all_rain_Daily<-aggregate(cbind(Ammonia.um,Phosphate.um,Nitrite.Nitrate.um)~Date+Daily_Rain+Environment+twodayrain,Dev_all_rain,FUN=mean)
+
+#Plot data- Ammonia
+ggplot(Dev_all_rain_Daily)+geom_point(aes(x=Daily_Rain,y=Ammonia.um, color=Environment))+
+  theme_bw()
+
+#Plot data- Nitrate
+ggplot(Dev_all_rain_Daily)+geom_point(aes(x=Daily_Rain,y=Nitrite.Nitrate.um, color=Environment))+
+  theme_bw()
+
+ggplot(Dev_all_rain_Daily)+geom_point(aes(x=Daily_Rain,y=Phosphate.um, color=Environment))+
+  theme_bw()+ylim(0,100)
+
+
+# There are a lot of high nutrient concentrations for the golf course, but also a lot more samples taken now try to seperate by month
+Dev_all_rain$month<-format(Dev_all_rain$Date,format="%b")
+Dev_all_rain$Year<-format(Dev_all_rain$Date,format="%Y")
+
+ggplot(Dev_all_rain)+geom_boxplot(aes(x=month,y=Phosphate.um, color=Environment))
+ggplot(Dev_all_rain)+geom_boxplot(aes(x=month,y=Nitrite.Nitrate.um, color=Environment))
+ggplot(Dev_all_rain)+geom_boxplot(aes(x=month,y=Ammonia.um, color=Environment))+ylim(0,100)
+
+
+
+
+## What does old devereux data look like?
+old_Dev<-old_Dev[old_Dev$po4_uM>=0&old_Dev$no3_uM>=0&old_Dev$nh4_uM>=0,]
+old_Dev$Year<-format(old_Dev$Date,format="%Y")
+
+ggplot(old_Dev)+geom_boxplot(aes(x=site_code,y=po4_uM))
+ggplot(old_Dev)+geom_boxplot(aes(x=site_code,y=nh4_uM))
+ggplot(old_Dev)+geom_boxplot(aes(x=site_code,y=no3_uM))
+
+ggplot(old_Dev)+geom_boxplot(aes(x=Year,y=po4_uM))
+ggplot(old_Dev)+geom_boxplot(aes(x=Year,y=nh4_uM))
+ggplot(old_Dev)+geom_boxplot(aes(x=Year,y=no3_uM))
+
+ggplot(Dev_all_rain)+geom_boxplot(aes(x=Year,y=Phosphate.um))
+ggplot(Dev_all_rain)+geom_boxplot(aes(x=Year,y=Nitrite.Nitrate.um))
+ggplot(Dev_all_rain)+geom_boxplot(aes(x=Year,y=Ammonia.um))
+
+
+
+
+
+```
+
+
+Remove summer months from Rosana data when more low values happen.
+
+```{r}
+

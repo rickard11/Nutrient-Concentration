@@ -1,0 +1,15 @@
+   wtr_yr sample_number
+1    WY04            12
+2    WY05            13
+3    WY06             6
+4    WY07             2
+5    WY08             6
+6    WY09             8
+7    WY10            18
+8    WY11             9
+9    WY17             1
+10   WY18             2
+11   WY19            14
+12   WY20            28
+13   WY21            31
+14   WY22            25
